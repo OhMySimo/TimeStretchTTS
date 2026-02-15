@@ -56,6 +56,10 @@ class LengthPenaltyLogitsProcessor(LogitsProcessor):
         """
         self.step_count += 1
         
+         # DEBUG
+        if self.step_count % 10 == 0:
+            print(f"[PENALTY] Step {self.step_count}/{self.target_frames}")
+               
         # Only apply penalty after exceeding threshold
         threshold = self.target_frames * self.start_penalty_ratio
         if self.step_count <= threshold:
