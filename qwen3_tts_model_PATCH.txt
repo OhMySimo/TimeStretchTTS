@@ -1,0 +1,129 @@
+# PATCH FOR qwen3_tts_model.py
+# Apply these changes to enable length penalty in generate_voice_clone()
+
+# ============================================================================
+# STEP 1: Add import at the top of the file (after line 29)
+# ============================================================================
+# After this line:
+#     from ..core.models import Qwen3TTSConfig, Qwen3TTSForConditionalGeneration, Qwen3TTSProcessor
+# 
+# Add:
+#     from .length_penalty_processor import LengthPenaltyLogitsProcessor
+
+# ============================================================================
+# STEP 2: Modify generate_voice_clone method signature (around line 489)
+# ============================================================================
+# FIND this signature:
+    @torch.inference_mode()
+    def generate_voice_clone(
+        self,
+        text: Union[str, List[str]],
+        language: Union[str, List[str]] = None,
+        ref_audio: Optional[Union[AudioLike, List[AudioLike]]] = None,
+        ref_text: Optional[Union[str, List[Optional[str]]]] = None,
+        x_vector_only_mode: Union[bool, List[bool]] = False,
+        voice_clone_prompt: Optional[Union[List[VoiceClonePromptItem], Dict]] = None,
+        non_streaming_mode: bool = True,
+        **kwargs,
+    ) -> Tuple[List[np.ndarray], int]:
+
+# REPLACE WITH:
+    @torch.inference_mode()
+    def generate_voice_clone(
+        self,
+        text: Union[str, List[str]],
+        language: Union[str, List[str]] = None,
+        ref_audio: Optional[Union[AudioLike, List[AudioLike]]] = None,
+        ref_text: Optional[Union[str, List[Optional[str]]]] = None,
+        x_vector_only_mode: Union[bool, List[bool]] = False,
+        voice_clone_prompt: Optional[Union[List[VoiceClonePromptItem], Dict]] = None,
+        non_streaming_mode: bool = True,
+        length_penalty_alpha: float = 0.0,          # NEW PARAMETER
+        frames_per_text_token: float = 8.0,         # NEW PARAMETER
+        **kwargs,
+    ) -> Tuple[List[np.ndarray], int]:
+
+# ============================================================================
+# STEP 3: Add length penalty documentation (in the docstring after line 497)
+# ============================================================================
+# FIND this section in the docstring:
+            max_new_tokens:
+                Maximum number of new codec tokens to generate.
+            **kwargs:
+                Any other keyword arguments supported by HuggingFace Transformers `generate()` can be passed.
+                They will be forwarded to the underlying `Qwen3TTSForConditionalGeneration.generate(...)`.
+
+# REPLACE WITH:
+            max_new_tokens:
+                Maximum number of new codec tokens to generate.
+            length_penalty_alpha:
+                Strength of length penalty (0.0 = disabled, 0.15 = medium, 0.20 = strong).
+                Prevents generation from being excessively long by boosting EOS probability.
+            frames_per_text_token:
+                Expected codec frames per text token (default: 8.0).
+                Lower values = expects faster speech. Adjust based on speaking rate.
+            **kwargs:
+                Any other keyword arguments supported by HuggingFace Transformers `generate()` can be passed.
+                They will be forwarded to the underlying `Qwen3TTSForConditionalGeneration.generate(...)`.
+
+# ============================================================================
+# STEP 4: Insert length penalty logic BEFORE model.generate() call (around line 601)
+# ============================================================================
+# FIND these lines (around line 601-610):
+        gen_kwargs = self._merge_generate_kwargs(**kwargs)
+
+        talker_codes_list, _ = self.model.generate(
+            input_ids=input_ids,
+            ref_ids=ref_ids,
+            voice_clone_prompt=voice_clone_prompt_dict,
+            languages=languages,
+            non_streaming_mode=non_streaming_mode,
+            **gen_kwargs,
+        )
+
+# REPLACE WITH:
+        gen_kwargs = self._merge_generate_kwargs(**kwargs)
+
+        # Apply length penalty if enabled
+        if length_penalty_alpha > 0:
+            try:
+                # Get EOS token ID from model config
+                eos_id = self.model.config.talker_config.codec_eos_token_id
+                
+                # Create processor for each input sequence
+                # NOTE: Currently HuggingFace LogitsProcessorList applies same processor
+                # to all batch items. For different text lengths in batch, this is
+                # approximate. For best results, use batch_size=1 in inference.
+                processors = []
+                for ids in input_ids:
+                    processor = LengthPenaltyLogitsProcessor(
+                        text_length=ids.shape[1],
+                        frames_per_text_token=frames_per_text_token,
+                        penalty_alpha=length_penalty_alpha,
+                        eos_token_id=eos_id,
+                    )
+                    processors.append(processor)
+                
+                # HuggingFace limitation: logits_processor applies to entire batch
+                # We use the first processor as a reasonable approximation
+                # For variable-length batches, generate one at a time
+                if 'logits_processor' not in gen_kwargs:
+                    gen_kwargs['logits_processor'] = []
+                gen_kwargs['logits_processor'].extend(processors[:1])
+                
+            except Exception as e:
+                # If anything fails, continue without length penalty
+                print(f"Warning: Could not apply length penalty: {e}")
+
+        talker_codes_list, _ = self.model.generate(
+            input_ids=input_ids,
+            ref_ids=ref_ids,
+            voice_clone_prompt=voice_clone_prompt_dict,
+            languages=languages,
+            non_streaming_mode=non_streaming_mode,
+            **gen_kwargs,
+        )
+
+# ============================================================================
+# END OF PATCH
+# ============================================================================
