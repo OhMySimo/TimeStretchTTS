@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Improved Automatic Patch Script for Qwen3-TTS Length Penalty
-More robust pattern matching for different file formats.
+Automatic Patch Script for Qwen3-TTS Length Penalty
+Applies all modifications to qwen3_tts_model.py without manual editing.
 """
 
 import os
@@ -57,62 +57,30 @@ def apply_import_modification(content):
     return modified_content, True
 
 
-def apply_signature_modification_v2(content):
-    """
-    Improved signature modification using line-by-line approach.
-    More robust against different formatting styles.
-    """
-    lines = content.split('\n')
+def apply_signature_modification(content):
+    """Modify generate_voice_clone signature to add new parameters."""
+    # Find the function signature
+    pattern = r'(@torch\.inference_mode\(\)\s+def generate_voice_clone\([^)]*?non_streaming_mode: bool = True,)\s*(\*\*kwargs,)'
     
-    # Find the generate_voice_clone function
-    func_start = -1
-    for i, line in enumerate(lines):
-        if 'def generate_voice_clone(' in line:
-            func_start = i
-            break
-    
-    if func_start == -1:
-        print("⚠️  Warning: Could not find generate_voice_clone function")
+    match = re.search(pattern, content, re.DOTALL)
+    if not match:
+        print("⚠️  Warning: Could not find generate_voice_clone signature")
         return content, False
     
     # Check if already modified
-    for i in range(func_start, min(func_start + 30, len(lines))):
-        if 'length_penalty_alpha' in lines[i]:
-            print("  ℹ️  Signature already modified, skipping")
-            return content, True
+    if 'length_penalty_alpha' in content[match.start():match.start()+2000]:
+        print("  ℹ️  Signature already modified, skipping")
+        return content, True
     
-    # Find non_streaming_mode line and **kwargs line
-    non_streaming_idx = -1
-    kwargs_idx = -1
+    # Insert new parameters
+    new_params = (
+        match.group(1) + "\n" +
+        "        length_penalty_alpha: float = 0.0,\n" +
+        "        frames_per_text_token: float = 8.0,\n" +
+        "        " + match.group(2)
+    )
     
-    for i in range(func_start, min(func_start + 30, len(lines))):
-        if 'non_streaming_mode: bool = True' in lines[i]:
-            non_streaming_idx = i
-        if '**kwargs' in lines[i] and non_streaming_idx != -1:
-            kwargs_idx = i
-            break
-    
-    if non_streaming_idx == -1 or kwargs_idx == -1:
-        print(f"⚠️  Warning: Could not find parameter insertion point")
-        print(f"    non_streaming_mode at line: {non_streaming_idx}")
-        print(f"    **kwargs at line: {kwargs_idx}")
-        return content, False
-    
-    # Insert new parameters between non_streaming_mode and **kwargs
-    # Get the indentation from the non_streaming_mode line
-    indent = len(lines[non_streaming_idx]) - len(lines[non_streaming_idx].lstrip())
-    indent_str = ' ' * indent
-    
-    new_lines = [
-        f"{indent_str}length_penalty_alpha: float = 0.0,",
-        f"{indent_str}frames_per_text_token: float = 8.0,",
-    ]
-    
-    # Insert the new lines
-    lines[non_streaming_idx] = lines[non_streaming_idx].rstrip(',') + ','
-    lines = lines[:kwargs_idx] + new_lines + lines[kwargs_idx:]
-    
-    modified_content = '\n'.join(lines)
+    modified_content = content[:match.start()] + new_params + content[match.end():]
     print("  ✅ Modified function signature")
     return modified_content, True
 
@@ -151,7 +119,10 @@ def apply_docstring_modification(content):
 
 def apply_logic_modification(content):
     """Add length penalty logic before model.generate() call."""
-    # Find generate_voice_clone method
+    # Find the gen_kwargs line and model.generate call in generate_voice_clone
+    # We need to be careful to find the right occurrence (in generate_voice_clone, not other methods)
+    
+    # Strategy: Find generate_voice_clone method, then find the gen_kwargs and model.generate within it
     voice_clone_pattern = r'def generate_voice_clone\([^)]*?\).*?(?=\n    def |\nclass |\Z)'
     voice_clone_match = re.search(voice_clone_pattern, content, re.DOTALL)
     
@@ -242,7 +213,7 @@ def verify_modifications(content):
 
 def main():
     print("=" * 70)
-    print("🔧 Automatic Length Penalty Patcher (Improved)")
+    print("🔧 Automatic Length Penalty Patcher")
     print("=" * 70)
     print()
     
@@ -292,10 +263,10 @@ def main():
     original_content = content
     success = True
     
-    # Apply modifications using improved v2 signature modification
+    # Apply modifications
     modifications = [
         ("Import", apply_import_modification),
-        ("Signature", apply_signature_modification_v2),  # Using v2
+        ("Signature", apply_signature_modification),
         ("Docstring", apply_docstring_modification),
         ("Logic", apply_logic_modification),
     ]
@@ -310,11 +281,7 @@ def main():
     
     if not success:
         print("⚠️  Some modifications failed. File not written.")
-        print(f"Backup is at: {backup_path}")
-        print()
-        print("You can try manual installation:")
-        print("  1. Read qwen3_tts_model_PATCH.txt")
-        print("  2. Edit the file manually")
+        print("You may need to apply the patch manually.")
         sys.exit(1)
     
     # Write modified content

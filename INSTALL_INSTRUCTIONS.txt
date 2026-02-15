@@ -1,0 +1,125 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║           ISTRUZIONI PER SOSTITUZIONE FILE COMPLETO                          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+HAI SCARICATO: qwen3_tts_model_MODIFIED.py
+
+Questo è il file qwen3_tts_model.py già completamente modificato con tutte le 
+feature di length penalty integrate.
+
+════════════════════════════════════════════════════════════════════════════════
+
+📋 STEP 1: TROVA IL FILE ORIGINALE
+
+Esegui questo comando per trovare dove è installato qwen_tts:
+
+    python3 -c "import qwen_tts; import os; print(os.path.dirname(qwen_tts.__file__))"
+
+Output esempio:
+    /usr/local/lib/python3.12/dist-packages/qwen_tts
+
+Il file da sostituire si trova in:
+    /usr/local/lib/python3.12/dist-packages/qwen_tts/inference/qwen3_tts_model.py
+
+════════════════════════════════════════════════════════════════════════════════
+
+📋 STEP 2: CREA UN BACKUP (IMPORTANTE!)
+
+Prima di sostituire, crea sempre un backup:
+
+    cd /usr/local/lib/python3.12/dist-packages/qwen_tts/inference/
+    cp qwen3_tts_model.py qwen3_tts_model.py.backup
+
+════════════════════════════════════════════════════════════════════════════════
+
+📋 STEP 3: COPIA IL FILE length_penalty_processor.py
+
+Il file modificato importa LengthPenaltyLogitsProcessor, quindi devi copiare
+anche quel file:
+
+    cp /path/dove/hai/scaricato/length_penalty_processor.py /usr/local/lib/python3.12/dist-packages/qwen_tts/inference/
+
+════════════════════════════════════════════════════════════════════════════════
+
+📋 STEP 4: SOSTITUISCI IL FILE
+
+Copia il file modificato sopra l'originale:
+
+    cp /path/dove/hai/scaricato/qwen3_tts_model_MODIFIED.py /usr/local/lib/python3.12/dist-packages/qwen_tts/inference/qwen3_tts_model.py
+
+════════════════════════════════════════════════════════════════════════════════
+
+📋 STEP 5: VERIFICA L'INSTALLAZIONE
+
+Testa che tutto funzioni:
+
+    python3 << 'EOF'
+from qwen_tts import Qwen3TTSModel
+import inspect
+
+sig = inspect.signature(Qwen3TTSModel.generate_voice_clone)
+params = list(sig.parameters.keys())
+
+if 'length_penalty_alpha' in params and 'frames_per_text_token' in params:
+    print("✅ Installazione riuscita!")
+    print("   Parametri trovati:", params)
+else:
+    print("❌ Installazione fallita")
+    print("   Parametri trovati:", params)
+EOF
+
+════════════════════════════════════════════════════════════════════════════════
+
+🔄 PER RIPRISTINARE IL FILE ORIGINALE
+
+Se qualcosa non va, ripristina il backup:
+
+    cd /usr/local/lib/python3.12/dist-packages/qwen_tts/inference/
+    cp qwen3_tts_model.py.backup qwen3_tts_model.py
+
+════════════════════════════════════════════════════════════════════════════════
+
+🧪 TESTING
+
+Dopo l'installazione, modifica e esegui test_length_penalty.py:
+
+    1. Imposta REF_AUDIO nel file
+    2. Esegui: python3 test_length_penalty.py
+    3. Ascolta i clip generati
+    4. Scegli il valore ottimale di alpha
+
+════════════════════════════════════════════════════════════════════════════════
+
+💡 SCRIPT RAPIDO DI INSTALLAZIONE
+
+Se preferisci, puoi usare questo script bash (sostituisci i path):
+
+#!/bin/bash
+QWEN_PATH=$(python3 -c "import qwen_tts; import os; print(os.path.dirname(qwen_tts.__file__))")
+DOWNLOAD_DIR="/path/dove/hai/scaricato/i/file"
+
+echo "Creazione backup..."
+cp $QWEN_PATH/inference/qwen3_tts_model.py $QWEN_PATH/inference/qwen3_tts_model.py.backup
+
+echo "Copia processor..."
+cp $DOWNLOAD_DIR/length_penalty_processor.py $QWEN_PATH/inference/
+
+echo "Sostituzione file principale..."
+cp $DOWNLOAD_DIR/qwen3_tts_model_MODIFIED.py $QWEN_PATH/inference/qwen3_tts_model.py
+
+echo "✅ Fatto!"
+
+════════════════════════════════════════════════════════════════════════════════
+
+📝 COSA È STATO MODIFICATO
+
+1. ✅ Import aggiunto: LengthPenaltyLogitsProcessor
+2. ✅ Signature modificata: +2 parametri (length_penalty_alpha, frames_per_text_token)
+3. ✅ Docstring aggiornata: documentazione nuovi parametri
+4. ✅ Logica aggiunta: blocco length penalty prima di model.generate()
+
+Totale righe: 990 (originale: 877, aggiunte: ~113 righe)
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                      BUONA INSTALLAZIONE! 🎉                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
