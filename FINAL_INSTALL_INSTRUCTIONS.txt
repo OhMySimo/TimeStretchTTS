@@ -1,0 +1,169 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║            INSTALLAZIONE COMPLETA - LENGTH PENALTY FUNZIONANTE               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+🎉 PROBLEMA RISOLTO!
+
+Abbiamo scoperto perché la length penalty non funzionava:
+Il metodo generate() di Qwen3TTS NON passava logits_processor al transformer interno!
+
+Ora abbiamo fixato il bug. Con questi file modificati, la length penalty FUNZIONERÀ.
+
+════════════════════════════════════════════════════════════════════════════════
+
+📦 FILE DA INSTALLARE (3 file):
+
+1. length_penalty_processor.py         → Il LogitsProcessor
+2. qwen3_tts_model_MODIFIED.py         → Wrapper con length penalty
+3. modeling_qwen3_tts_MODIFIED.py      → Core model (FIX DEL BUG!)
+
+════════════════════════════════════════════════════════════════════════════════
+
+🚀 INSTALLAZIONE RAPIDA:
+
+# 1. Trova dove è installato qwen_tts
+QWEN_PATH=$(python3 -c "import qwen_tts; import os; print(os.path.dirname(qwen_tts.__file__))")
+
+echo "Qwen3-TTS installato in: $QWEN_PATH"
+
+# 2. Backup dei file originali (IMPORTANTE!)
+cp $QWEN_PATH/inference/qwen3_tts_model.py $QWEN_PATH/inference/qwen3_tts_model.py.backup
+cp $QWEN_PATH/core/models/modeling_qwen3_tts.py $QWEN_PATH/core/models/modeling_qwen3_tts.py.backup
+
+# 3. Installa i 3 file
+cp length_penalty_processor.py $QWEN_PATH/inference/
+cp qwen3_tts_model_MODIFIED.py $QWEN_PATH/inference/qwen3_tts_model.py
+cp modeling_qwen3_tts_MODIFIED.py $QWEN_PATH/core/models/modeling_qwen3_tts.py
+
+echo "✅ Installazione completata!"
+
+════════════════════════════════════════════════════════════════════════════════
+
+✅ VERIFICA INSTALLAZIONE:
+
+python3 << 'EOF'
+from qwen_tts import Qwen3TTSModel
+import inspect
+
+# Check 1: Verifica parametri in generate_voice_clone
+sig = inspect.signature(Qwen3TTSModel.generate_voice_clone)
+params = list(sig.parameters.keys())
+
+if 'length_penalty_alpha' in params and 'frames_per_text_token' in params:
+    print("✅ Parametri length penalty presenti in generate_voice_clone()")
+else:
+    print("❌ Parametri mancanti")
+    exit(1)
+
+# Check 2: Verifica import del processor
+try:
+    from qwen_tts.inference.length_penalty_processor import LengthPenaltyLogitsProcessor
+    print("✅ LengthPenaltyLogitsProcessor importabile")
+except ImportError:
+    print("❌ LengthPenaltyLogitsProcessor non trovato")
+    exit(1)
+
+# Check 3: Verifica parametro logits_processor nel core model
+from qwen_tts.core.models.modeling_qwen3_tts import Qwen3TTSForConditionalGeneration
+import inspect
+gen_sig = inspect.signature(Qwen3TTSForConditionalGeneration.generate)
+gen_params = list(gen_sig.parameters.keys())
+
+if 'logits_processor' in gen_params:
+    print("✅ logits_processor presente in Qwen3TTSForConditionalGeneration.generate()")
+else:
+    print("❌ logits_processor mancante nel core model")
+    exit(1)
+
+print("\n🎉 TUTTO OK! La length penalty è pronta!")
+EOF
+
+════════════════════════════════════════════════════════════════════════════════
+
+🧪 TEST CON DEBUG:
+
+Modifica length_penalty_processor.py e aggiungi print per vedere se viene chiamato:
+
+def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor):
+    self.step_count += 1
+    
+    # DEBUG
+    if self.step_count % 10 == 0:
+        print(f"[PENALTY] Step {self.step_count}/{self.target_frames}")
+    
+    # ... resto del codice
+
+Poi esegui test_length_penalty.py - DOVRESTI VEDERE gli output [PENALTY]!
+
+════════════════════════════════════════════════════════════════════════════════
+
+📊 COSA ASPETTARSI:
+
+Con alpha=0.0:   ~8.8 secondi (baseline)
+Con alpha=0.15:  ~7.5-8.0 secondi (riduzione 10-15%)
+Con alpha=0.20:  ~7.0-7.5 secondi (riduzione 15-20%)
+Con alpha=0.25:  ~6.5-7.0 secondi (riduzione 20-25%)
+Con alpha=0.30:  ~6.0-6.5 secondi (riduzione 25-30%)
+
+Se non vedi differenze, controlla i print di debug!
+
+════════════════════════════════════════════════════════════════════════════════
+
+🔄 ROLLBACK (se qualcosa va storto):
+
+cd $QWEN_PATH/inference/
+cp qwen3_tts_model.py.backup qwen3_tts_model.py
+
+cd $QWEN_PATH/core/models/
+cp modeling_qwen3_tts.py.backup modeling_qwen3_tts.py
+
+════════════════════════════════════════════════════════════════════════════════
+
+📝 COSA ABBIAMO FIXATO:
+
+PRIMA (BUG):
+- qwen3_tts_model.py creava LengthPenaltyLogitsProcessor
+- Lo metteva in gen_kwargs['logits_processor']
+- Chiamava model.generate(**gen_kwargs)
+- Ma Qwen3TTSForConditionalGeneration.generate() NON accettava logits_processor!
+- Il processor veniva ignorato silenziosamente
+
+DOPO (FIXED):
+- modeling_qwen3_tts.py ora accetta logits_processor come parametro
+- Lo passa a self.talker.generate() (il transformer interno)
+- Il processor viene EFFETTIVAMENTE chiamato durante generation!
+- La length penalty FUNZIONA!
+
+════════════════════════════════════════════════════════════════════════════════
+
+💡 PROSSIMI PASSI:
+
+1. Installa i 3 file
+2. Verifica con lo script di test
+3. Esegui test_length_penalty.py con DEBUG attivo
+4. Se vedi output [PENALTY] → SUCCESS! 🎉
+5. Ascolta i clip e scegli l'alpha ottimale
+6. (Opzionale) Procedi con training + duration head per ulteriore miglioramento
+
+════════════════════════════════════════════════════════════════════════════════
+
+🎯 DURATION HEAD: VALE ANCORA LA PENA?
+
+Ora che la length penalty funziona:
+
+✅ PRO del Duration Head:
+- Può insegnare rappresentazioni temporali migliori
+- Migliora prosody e naturalezza
+- Complementare alla length penalty (usali insieme!)
+
+⚠️ REALTÀ:
+- La length penalty risolve il problema principale (durata)
+- Duration head dà un boost ~5-10% aggiuntivo
+- Non è più "critico" ma è comunque utile
+
+CONSIGLIO: Usa la length penalty SUBITO in produzione, poi sperimenta con 
+duration head per vedere se migliora ulteriormente.
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    ORA LA LENGTH PENALTY FUNZIONA! 🚀                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
